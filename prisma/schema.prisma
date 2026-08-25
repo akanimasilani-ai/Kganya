@@ -1,0 +1,681 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER & AUTHENTICATION
+// ============================================================================
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String? // null for OAuth users
+  role      UserRole @default(CUSTOMER)
+  status    UserStatus @default(ACTIVE)
+  
+  // User profile
+  phone     String?
+  dateOfBirth DateTime?
+  
+  // Relationships
+  customerProfile   CustomerProfile?
+  applications      FuneralApplication[]
+  claims            Claim[]
+  cateringEnquiries CateringEnquiry[]
+  tombstoneEnquiries TombstoneEnquiry[]
+  documents         Document[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// CUSTOMER PROFILE
+// ============================================================================
+
+model CustomerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Personal information
+  idNumber  String?
+  nationality String?
+  address   String?
+  city      String?
+  province  String?
+  postalCode String?
+  country   String @default("South Africa")
+  
+  // Employment
+  occupation String?
+  employer   String?
+  
+  // Emergency contact
+  emergencyContactName String?
+  emergencyContactPhone String?
+  emergencyContactRelationship String?
+  
+  // Preferences
+  preferredLanguage String @default("en")
+  preferredCommunication String @default("email")
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// FUNERAL COVER & APPLICATIONS
+// ============================================================================
+
+enum CoverType {
+  INDIVIDUAL
+  FAMILY
+  SENIOR
+}
+
+enum CoverStatus {
+  ACTIVE
+  LAPSED
+  CANCELLED
+  PENDING
+}
+
+model CoverOption {
+  id        String   @id @default(cuid())
+  name      String   // e.g., "Individual Cover", "Family Plan"
+  coverType CoverType
+  description String
+  monthlyPremium Decimal
+  benefitAmount Decimal
+  features  String[] // Array of benefit descriptions
+  eligibilityAge String // e.g., "18-75 years"
+  waitingPeriod String? // e.g., "30 days"
+  isActive  Boolean @default(true)
+  
+  applications FuneralApplication[]
+  policies  Policy[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  ADDITIONAL_INFO_REQUIRED
+  APPROVED
+  DECLINED
+  WITHDRAWN
+}
+
+model FuneralApplication {
+  id        String   @id @default(cuid())
+  referenceNumber String @unique // Auto-generated reference number
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  coverOptionId String
+  coverOption   CoverOption @relation(fields: [coverOptionId], references: [id])
+  
+  status    ApplicationStatus @default(DRAFT)
+  
+  // Personal Information
+  firstName String
+  lastName  String
+  email     String
+  phone     String
+  dateOfBirth DateTime
+  idNumber  String
+  nationality String
+  
+  // Address
+  address   String
+  city      String
+  province  String
+  postalCode String
+  country   String @default("South Africa")
+  
+  // Employment
+  occupation String?
+  employer   String?
+  
+  // Beneficiaries
+  beneficiaries Beneficiary[]
+  
+  // Documents
+  documents Document[]
+  
+  // Admin notes
+  adminNotes String?
+  reviewedBy String? // Admin user ID
+  reviewedAt DateTime?
+  
+  // Activity log
+  activities ApplicationActivity[]
+  
+  // Status tracking
+  submittedAt DateTime?
+  lastUpdatedAt DateTime @updatedAt
+  
+  createdAt DateTime @default(now())
+}
+
+model Beneficiary {
+  id        String   @id @default(cuid())
+  applicationId String
+  application FuneralApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  firstName String
+  lastName  String
+  relationship String // e.g., "Spouse", "Child", "Parent"
+  dateOfBirth DateTime?
+  idNumber  String?
+  percentage Decimal? // Percentage of benefit
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApplicationActivity {
+  id        String   @id @default(cuid())
+  applicationId String
+  application FuneralApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  action    String // e.g., "CREATED", "SUBMITTED", "STATUS_CHANGED", "NOTE_ADDED"
+  detail    String?
+  changedBy String? // User ID who made the change
+  
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// POLICIES & COVER
+// ============================================================================
+
+model Policy {
+  id        String   @id @default(cuid())
+  policyNumber String @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  coverOptionId String
+  coverOption   CoverOption @relation(fields: [coverOptionId], references: [id])
+  
+  status    CoverStatus @default(PENDING)
+  activatedAt DateTime?
+  cancelledAt DateTime?
+  
+  monthlyPremium Decimal
+  benefitAmount Decimal
+  
+  claims    Claim[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// CLAIMS
+// ============================================================================
+
+enum ClaimStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ADDITIONAL_INFO_REQUIRED
+  APPROVED
+  DECLINED
+  COMPLETED
+}
+
+model Claim {
+  id        String   @id @default(cuid())
+  referenceNumber String @unique // Auto-generated claim reference
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  policyId  String
+  policy    Policy   @relation(fields: [policyId], references: [id])
+  
+  status    ClaimStatus @default(SUBMITTED)
+  
+  // Claimant Information
+  claimantName String
+  claimantRelationship String // e.g., "Spouse", "Child", "Beneficiary"
+  claimantEmail String
+  claimantPhone String
+  
+  // Deceased Information
+  deceasedName String
+  deceasedDateOfDeath DateTime
+  causOfDeath String?
+  
+  // Claim Details
+  claimAmount Decimal?
+  claimDescription String?
+  
+  // Documents
+  documents Document[]
+  
+  // Admin notes
+  adminNotes String?
+  reviewedBy String? // Admin user ID
+  reviewedAt DateTime?
+  
+  // Activity log
+  activities ClaimActivity[]
+  
+  submittedAt DateTime @default(now())
+  lastUpdatedAt DateTime @updatedAt
+  completedAt DateTime?
+  
+  createdAt DateTime @default(now())
+}
+
+model ClaimActivity {
+  id        String   @id @default(cuid())
+  claimId   String
+  claim     Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  
+  action    String // e.g., "CREATED", "SUBMITTED", "STATUS_CHANGED", "DOCUMENT_REQUESTED"
+  detail    String?
+  changedBy String? // User ID who made the change
+  
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// DOCUMENTS
+// ============================================================================
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum DocumentType {
+  ID_COPY
+  PROOF_OF_RESIDENCE
+  BANK_STATEMENT
+  EMPLOYMENT_LETTER
+  MEDICAL_CERTIFICATE
+  DEATH_CERTIFICATE
+  MARRIAGE_CERTIFICATE
+  BIRTH_CERTIFICATE
+  POLICE_REPORT
+  OTHER
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  
+  // Relationships - document can belong to user, application, or claim
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  applicationId String?
+  application   FuneralApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  
+  claimId   String?
+  claim     Claim?   @relation(fields: [claimId], references: [id], onDelete: SetNull)
+  
+  cateringEnquiryId String?
+  cateringEnquiry   CateringEnquiry? @relation(fields: [cateringEnquiryId], references: [id], onDelete: SetNull)
+  
+  tombstoneEnquiryId String?
+  tombstoneEnquiry   TombstoneEnquiry? @relation(fields: [tombstoneEnquiryId], references: [id], onDelete: SetNull)
+  
+  // Document details
+  fileName  String
+  fileType  String // e.g., "application/pdf"
+  fileSize  Int // bytes
+  filePath  String // local path or S3 URL
+  
+  documentType DocumentType
+  status    DocumentStatus @default(PENDING)
+  
+  // Metadata
+  uploadedBy String? // User ID
+  rejectionReason String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// CATERING SERVICES
+// ============================================================================
+
+enum CateringEnquiryStatus {
+  RECEIVED
+  QUOTED
+  ACCEPTED
+  REJECTED
+  COMPLETED
+}
+
+model CateringPackage {
+  id        String   @id @default(cuid())
+  name      String
+  description String
+  servingSize String // e.g., "25-50 people"
+  price     Decimal
+  items     String[] // Array of included items
+  isActive  Boolean @default(true)
+  
+  enquiries CateringEnquiry[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CateringEnquiry {
+  id        String   @id @default(cuid())
+  referenceNumber String @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  packageId String?
+  package   CateringPackage? @relation(fields: [packageId], references: [id])
+  
+  status    CateringEnquiryStatus @default(RECEIVED)
+  
+  // Event Information
+  eventDate DateTime
+  eventLocation String
+  estimatedGuests Int
+  
+  // Customer Information
+  customerName String
+  customerPhone String
+  customerEmail String
+  
+  // Additional Requirements
+  specialRequirements String?
+  dietaryRestrictions String?
+  
+  // Quote
+  quotedPrice Decimal?
+  quotedAt   DateTime?
+  
+  // Documents
+  documents Document[]
+  
+  // Admin notes
+  adminNotes String?
+  
+  submittedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// TOMBSTONE SERVICES
+// ============================================================================
+
+enum TombstoneEnquiryStatus {
+  RECEIVED
+  QUOTED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model TombstoneOption {
+  id        String   @id @default(cuid())
+  name      String
+  description String
+  material  String // e.g., "Granite", "Marble"
+  size      String
+  basePrice Decimal
+  isActive  Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TombstoneEnquiry {
+  id        String   @id @default(cuid())
+  referenceNumber String @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  status    TombstoneEnquiryStatus @default(RECEIVED)
+  
+  // Deceased Information
+  deceasedName String
+  deceasedDateOfBirth DateTime?
+  deceasedDateOfDeath DateTime
+  cemeteryLocation String
+  
+  // Customer Information
+  customerName String
+  customerPhone String
+  customerEmail String
+  
+  // Tombstone Details
+  designPreference String?
+  material  String? // e.g., "Granite", "Marble"
+  size      String?
+  inscription String?
+  additionalFeatures String?
+  
+  // Quotation
+  quotedPrice Decimal?
+  quotedAt   DateTime?
+  
+  // Documents (design images, cemetery details, etc.)
+  documents Document[]
+  
+  // Admin notes
+  adminNotes String?
+  
+  submittedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// CASH PAYOUT SERVICE
+// ============================================================================
+
+enum CashPayoutStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PAID
+}
+
+model CashPayoutRequest {
+  id        String   @id @default(cuid())
+  referenceNumber String @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  status    CashPayoutStatus @default(DRAFT)
+  
+  // Request Details
+  requestedAmount Decimal
+  purpose   String
+  
+  // Bank Details
+  bankName  String
+  accountNumber String
+  accountHolder String
+  branchCode String
+  
+  // Approval
+  approvedAt DateTime?
+  approvedBy String? // Admin user ID
+  paidAt    DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User_CashPayoutRequest {
+  userId String
+  cashPayoutRequestId String
+  
+  @@id([userId, cashPayoutRequestId])
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+enum NotificationType {
+  REGISTRATION_COMPLETE
+  APPLICATION_SUBMITTED
+  APPLICATION_STATUS_CHANGED
+  ADDITIONAL_INFO_REQUIRED
+  CLAIM_SUBMITTED
+  CLAIM_STATUS_CHANGED
+  DOCUMENT_REQUESTED
+  SERVICE_ENQUIRY_RECEIVED
+  PAYMENT_CONFIRMATION
+  GENERAL_MESSAGE
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type      NotificationType
+  title     String
+  message   String
+  status    NotificationStatus @default(UNREAD)
+  
+  // Optional references
+  relatedApplicationId String?
+  relatedClaimId String?
+  relatedEnquiryId String?
+  
+  // Action URL
+  actionUrl String?
+  
+  readAt    DateTime?
+  
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// AUDIT & COMPLIANCE
+// ============================================================================
+
+enum AuditActionType {
+  USER_LOGIN
+  USER_LOGOUT
+  USER_REGISTRATION
+  USER_UPDATE
+  APPLICATION_CREATE
+  APPLICATION_UPDATE
+  APPLICATION_SUBMIT
+  CLAIM_CREATE
+  CLAIM_UPDATE
+  CLAIM_SUBMIT
+  DOCUMENT_UPLOAD
+  DOCUMENT_DELETE
+  ADMIN_ACTION
+  SECURITY_EVENT
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action    AuditActionType
+  resource  String? // e.g., "FuneralApplication:abc123"
+  description String?
+  ipAddress String?
+  userAgent String?
+  
+  success   Boolean @default(true)
+  errorMessage String?
+  
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// FEEDBACK & CONTACT
+// ============================================================================
+
+enum ContactStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  
+  name      String
+  email     String
+  phone     String?
+  subject   String
+  message   String
+  
+  status    ContactStatus @default(NEW)
+  
+  userId    String? // Null if not logged in
+  
+  assignedTo String? // Admin user ID
+  adminResponse String?
+  respondedAt DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FAQ {
+  id        String   @id @default(cuid())
+  category  String // e.g., "Funeral Cover", "Applications", "Claims"
+  question  String
+  answer    String
+  order     Int @default(0)
+  isActive  Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([category, question])
+}
