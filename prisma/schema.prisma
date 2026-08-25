@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,672 +7,750 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================================
-// USER & AUTHENTICATION
-// ============================================================================
-
-enum UserRole {
+enum Role {
   CUSTOMER
   ADMIN
   SUPER_ADMIN
 }
 
-enum UserStatus {
+enum AccountStatus {
   ACTIVE
-  INACTIVE
   SUSPENDED
+  DELETED
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  password  String? // null for OAuth users
-  role      UserRole @default(CUSTOMER)
-  status    UserStatus @default(ACTIVE)
+  id                String    @id @default(cuid())
+  email             String    @unique
+  emailVerified     DateTime?
+  password          String
+  firstName         String
+  lastName          String
+  phone             String?
+  role              Role      @default(CUSTOMER)
+  status            AccountStatus @default(ACTIVE)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   
-  // User profile
-  phone     String?
-  dateOfBirth DateTime?
-  
-  // Relationships
   customerProfile   CustomerProfile?
-  applications      FuneralApplication[]
+  adminProfile      AdminProfile?
+  applications      Application[]
+  policies          Policy[]
   claims            Claim[]
+  documents         Document[]
   cateringEnquiries CateringEnquiry[]
   tombstoneEnquiries TombstoneEnquiry[]
-  documents         Document[]
+  payments          Payment[]
   notifications     Notification[]
+  messages          Message[]
+  supportTickets    SupportTicket[]
+  sessions          Session[]
   auditLogs         AuditLog[]
   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([email])
+  @@index([role])
+  @@index([status])
 }
 
-// ============================================================================
-// CUSTOMER PROFILE
-// ============================================================================
+model Session {
+  id                String  @id @default(cuid())
+  sessionToken      String  @unique
+  userId            String
+  expires           DateTime
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
 
 model CustomerProfile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  identificationNumber  String?
+  identificationType    String?
+  dateOfBirth           DateTime?
+  gender                String?
+  address               String?
+  city                  String?
+  province              String?
+  postalCode            String?
+  country               String    @default("ZA")
+  occupation            String?
+  maritalStatus         String?
+  preferredContactMethod String  @default("email")
+  consentToMarketing    Boolean   @default(false)
+  consentToPOPIA        Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   
-  // Personal information
-  idNumber  String?
-  nationality String?
-  address   String?
-  city      String?
-  province  String?
-  postalCode String?
-  country   String @default("South Africa")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  // Employment
-  occupation String?
-  employer   String?
-  
-  // Emergency contact
-  emergencyContactName String?
-  emergencyContactPhone String?
-  emergencyContactRelationship String?
-  
-  // Preferences
-  preferredLanguage String @default("en")
-  preferredCommunication String @default("email")
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([userId])
 }
 
-// ============================================================================
-// FUNERAL COVER & APPLICATIONS
-// ============================================================================
-
-enum CoverType {
-  INDIVIDUAL
-  FAMILY
-  SENIOR
-}
-
-enum CoverStatus {
-  ACTIVE
-  LAPSED
-  CANCELLED
-  PENDING
-}
-
-model CoverOption {
-  id        String   @id @default(cuid())
-  name      String   // e.g., "Individual Cover", "Family Plan"
-  coverType CoverType
-  description String
-  monthlyPremium Decimal
-  benefitAmount Decimal
-  features  String[] // Array of benefit descriptions
-  eligibilityAge String // e.g., "18-75 years"
-  waitingPeriod String? // e.g., "30 days"
-  isActive  Boolean @default(true)
+model AdminProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  department    String?
+  title         String?
+  permissions   String[]  @default([])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   
-  applications FuneralApplication[]
-  policies  Policy[]
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([userId])
 }
 
 enum ApplicationStatus {
   DRAFT
   SUBMITTED
   UNDER_REVIEW
-  ADDITIONAL_INFO_REQUIRED
+  ADDITIONAL_INFORMATION_REQUIRED
   APPROVED
   DECLINED
-  WITHDRAWN
+  CANCELLED
+  COMPLETED
 }
 
-model FuneralApplication {
-  id        String   @id @default(cuid())
-  referenceNumber String @unique // Auto-generated reference number
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model FuneralProduct {
+  id                String    @id @default(cuid())
+  code              String    @unique
+  name              String
+  description       String?
+  minAge            Int       @default(18)
+  maxAge            Int       @default(70)
+  minCover          Decimal   @db.Decimal(10, 2)
+  maxCover          Decimal   @db.Decimal(10, 2)
+  basePremium       Decimal   @db.Decimal(10, 2)
+  features          String[]  @default([])
+  benefits          String[]  @default([])
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   
-  coverOptionId String
-  coverOption   CoverOption @relation(fields: [coverOptionId], references: [id])
+  applications      Application[]
+  policies          Policy[]
   
-  status    ApplicationStatus @default(DRAFT)
+  @@index([isActive])
+}
+
+model Application {
+  id                    String    @id @default(cuid())
+  referenceNumber       String    @unique
+  userId                String
+  productId             String
+  status                ApplicationStatus @default(DRAFT)
   
-  // Personal Information
-  firstName String
-  lastName  String
-  email     String
-  phone     String
-  dateOfBirth DateTime
-  idNumber  String
-  nationality String
+  firstName             String
+  lastName              String
+  email                 String
+  phone                 String
+  dateOfBirth           DateTime
+  identificationNumber  String
+  occupationStatus      String?
   
-  // Address
-  address   String
-  city      String
-  province  String
-  postalCode String
-  country   String @default("South Africa")
+  coverAmount           Decimal   @db.Decimal(10, 2)
+  estimatedMonthlyPremium Decimal @db.Decimal(10, 2)
+  additionalInfo        String?   @db.Text
   
-  // Employment
-  occupation String?
-  employer   String?
+  submittedAt           DateTime?
+  reviewedAt            DateTime?
+  reviewedBy            String?
+  infoRequestedAt       DateTime?
+  decisionAt            DateTime?
   
-  // Beneficiaries
-  beneficiaries Beneficiary[]
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product               FuneralProduct @relation(fields: [productId], references: [id])
+  beneficiaries         Beneficiary[]
+  documents             ApplicationDocument[]
+  notes                 ApplicationNote[]
+  policy                Policy?
+  auditTrail            AuditLog[]
   
-  // Documents
-  documents Document[]
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   
-  // Admin notes
-  adminNotes String?
-  reviewedBy String? // Admin user ID
-  reviewedAt DateTime?
+  @@index([userId])
+  @@index([status])
+  @@index([referenceNumber])
+  @@index([createdAt])
+}
+
+model ApplicationNote {
+  id              String    @id @default(cuid())
+  applicationId   String
+  note            String    @db.Text
+  createdBy       String
+  isInternalOnly  Boolean   @default(true)
+  createdAt       DateTime  @default(now())
   
-  // Activity log
-  activities ApplicationActivity[]
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   
-  // Status tracking
-  submittedAt DateTime?
-  lastUpdatedAt DateTime @updatedAt
-  
-  createdAt DateTime @default(now())
+  @@index([applicationId])
 }
 
 model Beneficiary {
-  id        String   @id @default(cuid())
-  applicationId String
-  application FuneralApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  applicationId     String
+  firstName         String
+  lastName          String
+  relationshipToApplicant String
+  email             String?
+  phone             String?
+  dateOfBirth       DateTime?
+  percentageShare   Int       @default(0)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   
-  firstName String
-  lastName  String
-  relationship String // e.g., "Spouse", "Child", "Parent"
-  dateOfBirth DateTime?
-  idNumber  String?
-  percentage Decimal? // Percentage of benefit
+  application       Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  policyBeneficiaries PolicyBeneficiary[]
   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([applicationId])
 }
 
-model ApplicationActivity {
-  id        String   @id @default(cuid())
-  applicationId String
-  application FuneralApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  
-  action    String // e.g., "CREATED", "SUBMITTED", "STATUS_CHANGED", "NOTE_ADDED"
-  detail    String?
-  changedBy String? // User ID who made the change
-  
-  createdAt DateTime @default(now())
+enum PolicyStatus {
+  PENDING
+  ACTIVE
+  LAPSED
+  CANCELLED
+  EXPIRED
+  SUSPENDED
 }
-
-// ============================================================================
-// POLICIES & COVER
-// ============================================================================
 
 model Policy {
-  id        String   @id @default(cuid())
-  policyNumber String @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  policyNumber      String    @unique
+  userId            String
+  applicationId     String    @unique
+  productId         String
+  status            PolicyStatus @default(PENDING)
   
-  coverOptionId String
-  coverOption   CoverOption @relation(fields: [coverOptionId], references: [id])
+  coverAmount       Decimal   @db.Decimal(10, 2)
+  monthlyPremium    Decimal   @db.Decimal(10, 2)
+  effectiveDate     DateTime
+  expiryDate        DateTime?
+  paymentStatus     String    @default("PENDING")
+  paymentMethod     String?
+  paymentFrequency  String    @default("MONTHLY")
   
-  status    CoverStatus @default(PENDING)
-  activatedAt DateTime?
-  cancelledAt DateTime?
+  issuedAt          DateTime  @default(now())
+  lastPaymentDate   DateTime?
+  nextPaymentDate   DateTime?
   
-  monthlyPremium Decimal
-  benefitAmount Decimal
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application       Application @relation(fields: [applicationId], references: [id])
+  product           FuneralProduct @relation(fields: [productId], references: [id])
+  beneficiaries     PolicyBeneficiary[]
+  claims            Claim[]
+  payments          Payment[]
+  debitOrders       DebitOrder[]
   
-  claims    Claim[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([userId])
+  @@index([status])
+  @@index([policyNumber])
 }
 
-// ============================================================================
-// CLAIMS
-// ============================================================================
+model PolicyBeneficiary {
+  id              String    @id @default(cuid())
+  policyId        String
+  beneficiaryId   String
+  percentageShare Int
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  policy          Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  beneficiary     Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  
+  @@unique([policyId, beneficiaryId])
+  @@index([policyId])
+}
 
 enum ClaimStatus {
   SUBMITTED
   UNDER_REVIEW
-  ADDITIONAL_INFO_REQUIRED
+  ADDITIONAL_INFORMATION_REQUIRED
+  APPROVED
+  DECLINED
+  PROCESSING
+  COMPLETED
+}
+
+model Claim {
+  id                  String    @id @default(cuid())
+  referenceNumber     String    @unique
+  userId              String
+  policyId            String
+  status              ClaimStatus @default(SUBMITTED)
+  
+  claimantFirstName   String
+  claimantLastName    String
+  claimantEmail       String
+  claimantPhone       String
+  claimantRelationship String
+  
+  deceasedFirstName   String
+  deceasedLastName    String
+  deceasedDateOfBirth DateTime
+  deceasedDateOfDeath DateTime
+  causeOfDeath        String?
+  
+  claimDescription    String    @db.Text
+  amountClaimed       Decimal   @db.Decimal(10, 2)
+  amountApproved      Decimal?  @db.Decimal(10, 2)
+  decisionReason      String?   @db.Text
+  
+  submittedAt         DateTime  @default(now())
+  reviewedAt          DateTime?
+  reviewedBy          String?
+  decisionAt          DateTime?
+  completedAt         DateTime?
+  
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy              Policy    @relation(fields: [policyId], references: [id])
+  documents           ClaimDocument[]
+  notes               ClaimNote[]
+  payments            Payment[]
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([policyId])
+  @@index([status])
+  @@index([referenceNumber])
+}
+
+model ClaimNote {
+  id              String    @id @default(cuid())
+  claimId         String
+  note            String    @db.Text
+  createdBy       String
+  isInternalOnly  Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  
+  claim           Claim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  
+  @@index([claimId])
+}
+
+enum DocumentType {
+  ID_COPY
+  DEATH_CERTIFICATE
+  POLICY_DOCUMENT
+  BANK_CONFIRMATION
+  FUNERAL_BILL
+  SUPPORTING_DOCUMENT
+  OTHER
+}
+
+model Document {
+  id              String    @id @default(cuid())
+  userId          String
+  fileName        String
+  fileSize        Int
+  mimeType        String
+  documentType    DocumentType @default(OTHER)
+  storagePath     String    @unique
+  description     String?
+  isVerified      Boolean   @default(false)
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  isPrivate       Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  expiresAt       DateTime?
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationDocuments ApplicationDocument[]
+  claimDocuments  ClaimDocument[]
+  
+  @@index([userId])
+  @@index([isPrivate])
+}
+
+model ApplicationDocument {
+  id              String    @id @default(cuid())
+  applicationId   String
+  documentId      String
+  createdAt       DateTime  @default(now())
+  
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  document        Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  @@unique([applicationId, documentId])
+  @@index([applicationId])
+}
+
+model ClaimDocument {
+  id              String    @id @default(cuid())
+  claimId         String
+  documentId      String
+  createdAt       DateTime  @default(now())
+  
+  claim           Claim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  @@unique([claimId, documentId])
+  @@index([claimId])
+}
+
+enum CateringEnquiryStatus {
+  SUBMITTED
+  QUOTED
+  ACCEPTED
+  DECLINED
+  COMPLETED
+  CANCELLED
+}
+
+model CateringPackage {
+  id                String    @id @default(cuid())
+  name              String
+  description       String?   @db.Text
+  servingSize       Int
+  pricePerPerson    Decimal   @db.Decimal(10, 2)
+  features          String[]  @default([])
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  enquiries         CateringEnquiry[]
+  
+  @@index([isActive])
+}
+
+model CateringEnquiry {
+  id                String    @id @default(cuid())
+  referenceNumber   String    @unique
+  userId            String
+  packageId         String?
+  status            CateringEnquiryStatus @default(SUBMITTED)
+  
+  deceasedName      String
+  funeralDate       DateTime
+  venueLocation     String
+  estimatedGuests   Int
+  specialRequirements String? @db.Text
+  
+  quotedPrice       Decimal?  @db.Decimal(10, 2)
+  quotedAt          DateTime?
+  acceptedAt        DateTime?
+  completedAt       DateTime?
+  
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package           CateringPackage? @relation(fields: [packageId], references: [id])
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([status])
+}
+
+enum TombstoneEnquiryStatus {
+  SUBMITTED
+  QUOTED
+  ACCEPTED
+  IN_PRODUCTION
+  COMPLETED
+  CANCELLED
+}
+
+model TombstoneProduct {
+  id                String    @id @default(cuid())
+  name              String
+  description       String?   @db.Text
+  materialType      String
+  basePrice         Decimal   @db.Decimal(10, 2)
+  customizationOptions String[] @default([])
+  imageUrl          String?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  enquiries         TombstoneEnquiry[]
+  
+  @@index([isActive])
+}
+
+model TombstoneEnquiry {
+  id                  String    @id @default(cuid())
+  referenceNumber     String    @unique
+  userId              String
+  productId           String?
+  status              TombstoneEnquiryStatus @default(SUBMITTED)
+  
+  deceasedFirstName   String
+  deceasedLastName    String
+  deceasedDateOfBirth DateTime?
+  deceasedDateOfDeath DateTime
+  burialLocation      String?
+  
+  selectedOptions     String[]  @default([])
+  customSpecifications String? @db.Text
+  referenceImages     String[]  @default([])
+  
+  quotedPrice         Decimal?  @db.Decimal(10, 2)
+  quotedAt            DateTime?
+  acceptedAt          DateTime?
+  completedAt         DateTime?
+  
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product             TombstoneProduct? @relation(fields: [productId], references: [id])
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([status])
+}
+
+enum CashPayoutStatus {
+  SUBMITTED
+  UNDER_REVIEW
   APPROVED
   DECLINED
   COMPLETED
 }
 
-model Claim {
-  id        String   @id @default(cuid())
-  referenceNumber String @unique // Auto-generated claim reference
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model CashPayoutApplication {
+  id                  String    @id @default(cuid())
+  referenceNumber     String    @unique
+  userId              String
+  status              CashPayoutStatus @default(SUBMITTED)
   
-  policyId  String
-  policy    Policy   @relation(fields: [policyId], references: [id])
+  firstName           String
+  lastName            String
+  email               String
+  phone               String
+  identificationNumber String
   
-  status    ClaimStatus @default(SUBMITTED)
+  applicationReason   String    @db.Text
+  requestedAmount     Decimal?  @db.Decimal(10, 2)
+  approvedAmount      Decimal?  @db.Decimal(10, 2)
+  bankAccountNumber   String?
+  bankName            String?
   
-  // Claimant Information
-  claimantName String
-  claimantRelationship String // e.g., "Spouse", "Child", "Beneficiary"
-  claimantEmail String
-  claimantPhone String
+  submittedAt         DateTime  @default(now())
+  reviewedAt          DateTime?
+  decisionAt          DateTime?
+  processedAt         DateTime?
   
-  // Deceased Information
-  deceasedName String
-  deceasedDateOfDeath DateTime
-  causOfDeath String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
   
-  // Claim Details
-  claimAmount Decimal?
-  claimDescription String?
-  
-  // Documents
-  documents Document[]
-  
-  // Admin notes
-  adminNotes String?
-  reviewedBy String? // Admin user ID
-  reviewedAt DateTime?
-  
-  // Activity log
-  activities ClaimActivity[]
-  
-  submittedAt DateTime @default(now())
-  lastUpdatedAt DateTime @updatedAt
-  completedAt DateTime?
-  
-  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([status])
 }
 
-model ClaimActivity {
-  id        String   @id @default(cuid())
-  claimId   String
-  claim     Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
-  
-  action    String // e.g., "CREATED", "SUBMITTED", "STATUS_CHANGED", "DOCUMENT_REQUESTED"
-  detail    String?
-  changedBy String? // User ID who made the change
-  
-  createdAt DateTime @default(now())
-}
-
-// ============================================================================
-// DOCUMENTS
-// ============================================================================
-
-enum DocumentStatus {
+enum PaymentStatus {
   PENDING
-  APPROVED
-  REJECTED
-  EXPIRED
-}
-
-enum DocumentType {
-  ID_COPY
-  PROOF_OF_RESIDENCE
-  BANK_STATEMENT
-  EMPLOYMENT_LETTER
-  MEDICAL_CERTIFICATE
-  DEATH_CERTIFICATE
-  MARRIAGE_CERTIFICATE
-  BIRTH_CERTIFICATE
-  POLICE_REPORT
-  OTHER
-}
-
-model Document {
-  id        String   @id @default(cuid())
-  
-  // Relationships - document can belong to user, application, or claim
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  
-  applicationId String?
-  application   FuneralApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
-  
-  claimId   String?
-  claim     Claim?   @relation(fields: [claimId], references: [id], onDelete: SetNull)
-  
-  cateringEnquiryId String?
-  cateringEnquiry   CateringEnquiry? @relation(fields: [cateringEnquiryId], references: [id], onDelete: SetNull)
-  
-  tombstoneEnquiryId String?
-  tombstoneEnquiry   TombstoneEnquiry? @relation(fields: [tombstoneEnquiryId], references: [id], onDelete: SetNull)
-  
-  // Document details
-  fileName  String
-  fileType  String // e.g., "application/pdf"
-  fileSize  Int // bytes
-  filePath  String // local path or S3 URL
-  
-  documentType DocumentType
-  status    DocumentStatus @default(PENDING)
-  
-  // Metadata
-  uploadedBy String? // User ID
-  rejectionReason String?
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ============================================================================
-// CATERING SERVICES
-// ============================================================================
-
-enum CateringEnquiryStatus {
-  RECEIVED
-  QUOTED
-  ACCEPTED
-  REJECTED
-  COMPLETED
-}
-
-model CateringPackage {
-  id        String   @id @default(cuid())
-  name      String
-  description String
-  servingSize String // e.g., "25-50 people"
-  price     Decimal
-  items     String[] // Array of included items
-  isActive  Boolean @default(true)
-  
-  enquiries CateringEnquiry[]
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CateringEnquiry {
-  id        String   @id @default(cuid())
-  referenceNumber String @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  packageId String?
-  package   CateringPackage? @relation(fields: [packageId], references: [id])
-  
-  status    CateringEnquiryStatus @default(RECEIVED)
-  
-  // Event Information
-  eventDate DateTime
-  eventLocation String
-  estimatedGuests Int
-  
-  // Customer Information
-  customerName String
-  customerPhone String
-  customerEmail String
-  
-  // Additional Requirements
-  specialRequirements String?
-  dietaryRestrictions String?
-  
-  // Quote
-  quotedPrice Decimal?
-  quotedAt   DateTime?
-  
-  // Documents
-  documents Document[]
-  
-  // Admin notes
-  adminNotes String?
-  
-  submittedAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  createdAt DateTime @default(now())
-}
-
-// ============================================================================
-// TOMBSTONE SERVICES
-// ============================================================================
-
-enum TombstoneEnquiryStatus {
-  RECEIVED
-  QUOTED
-  ACCEPTED
-  IN_PROGRESS
-  COMPLETED
+  PROCESSING
+  PAID
+  FAILED
+  REFUNDED
   CANCELLED
 }
 
-model TombstoneOption {
-  id        String   @id @default(cuid())
-  name      String
-  description String
-  material  String // e.g., "Granite", "Marble"
-  size      String
-  basePrice Decimal
-  isActive  Boolean @default(true)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum PaymentType {
+  PREMIUM
+  CATERING
+  TOMBSTONE
+  CASH_PAYOUT
+  SERVICE
+  DEPOSIT
 }
 
-model TombstoneEnquiry {
-  id        String   @id @default(cuid())
-  referenceNumber String @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Payment {
+  id                String    @id @default(cuid())
+  referenceNumber   String    @unique
+  userId            String
+  type              PaymentType
+  status            PaymentStatus @default(PENDING)
   
-  status    TombstoneEnquiryStatus @default(RECEIVED)
+  amount            Decimal   @db.Decimal(10, 2)
+  currency          String    @default("ZAR")
+  description       String?
   
-  // Deceased Information
-  deceasedName String
-  deceasedDateOfBirth DateTime?
-  deceasedDateOfDeath DateTime
-  cemeteryLocation String
+  policyId          String?
+  claimId           String?
   
-  // Customer Information
-  customerName String
-  customerPhone String
-  customerEmail String
+  paymentMethod     String?
+  transactionId     String?   @unique
+  gatewayResponse   String?   @db.Text
   
-  // Tombstone Details
-  designPreference String?
-  material  String? // e.g., "Granite", "Marble"
-  size      String?
-  inscription String?
-  additionalFeatures String?
+  paidAt            DateTime?
+  failedAt          DateTime?
+  failureReason     String?
   
-  // Quotation
-  quotedPrice Decimal?
-  quotedAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   
-  // Documents (design images, cemetery details, etc.)
-  documents Document[]
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy            Policy?   @relation(fields: [policyId], references: [id])
+  claim             Claim?    @relation(fields: [claimId], references: [id])
+  attempts          PaymentAttempt[]
   
-  // Admin notes
-  adminNotes String?
-  
-  submittedAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([status])
+  @@index([transactionId])
 }
 
-// ============================================================================
-// CASH PAYOUT SERVICE
-// ============================================================================
-
-enum CashPayoutStatus {
-  DRAFT
-  SUBMITTED
-  APPROVED
-  REJECTED
-  PAID
+model PaymentAttempt {
+  id                String    @id @default(cuid())
+  paymentId         String
+  status            PaymentStatus @default(PENDING)
+  
+  amount            Decimal   @db.Decimal(10, 2)
+  method            String
+  gatewayResponse   String?   @db.Text
+  errorCode         String?
+  errorMessage      String?
+  
+  createdAt         DateTime  @default(now())
+  
+  payment           Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  
+  @@index([paymentId])
 }
 
-model CashPayoutRequest {
-  id        String   @id @default(cuid())
-  referenceNumber String @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model DebitOrder {
+  id                String    @id @default(cuid())
+  policyId          String
+  status            String    @default("ACTIVE")
   
-  status    CashPayoutStatus @default(DRAFT)
+  amount            Decimal   @db.Decimal(10, 2)
+  frequency         String    @default("MONTHLY")
+  dayOfMonth        Int       @default(1)
   
-  // Request Details
-  requestedAmount Decimal
-  purpose   String
+  mandateId         String?
+  mandateStatus     String    @default("PENDING")
+  mandateCreatedAt  DateTime?
+  mandateExpiresAt  DateTime?
   
-  // Bank Details
-  bankName  String
-  accountNumber String
-  accountHolder String
-  branchCode String
+  lastDebitDate     DateTime?
+  nextDebitDate     DateTime?
+  failureCount      Int       @default(0)
+  lastFailureReason String?
   
-  // Approval
-  approvedAt DateTime?
-  approvedBy String? // Admin user ID
-  paidAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model User_CashPayoutRequest {
-  userId String
-  cashPayoutRequestId String
+  policy            Policy    @relation(fields: [policyId], references: [id])
   
-  @@id([userId, cashPayoutRequestId])
-}
-
-// ============================================================================
-// NOTIFICATIONS
-// ============================================================================
-
-enum NotificationType {
-  REGISTRATION_COMPLETE
-  APPLICATION_SUBMITTED
-  APPLICATION_STATUS_CHANGED
-  ADDITIONAL_INFO_REQUIRED
-  CLAIM_SUBMITTED
-  CLAIM_STATUS_CHANGED
-  DOCUMENT_REQUESTED
-  SERVICE_ENQUIRY_RECEIVED
-  PAYMENT_CONFIRMATION
-  GENERAL_MESSAGE
-}
-
-enum NotificationStatus {
-  UNREAD
-  READ
-  ARCHIVED
+  @@index([policyId])
+  @@index([status])
 }
 
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  userId            String
+  title             String
+  message           String    @db.Text
+  type              String
+  relatedEntityId   String?
+  relatedEntityType String?
+  isRead            Boolean   @default(false)
+  readAt            DateTime?
+  actionUrl         String?
   
-  type      NotificationType
-  title     String
-  message   String
-  status    NotificationStatus @default(UNREAD)
+  createdAt         DateTime  @default(now())
   
-  // Optional references
-  relatedApplicationId String?
-  relatedClaimId String?
-  relatedEnquiryId String?
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  // Action URL
-  actionUrl String?
-  
-  readAt    DateTime?
-  
-  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([isRead])
 }
 
-// ============================================================================
-// AUDIT & COMPLIANCE
-// ============================================================================
-
-enum AuditActionType {
-  USER_LOGIN
-  USER_LOGOUT
-  USER_REGISTRATION
-  USER_UPDATE
-  APPLICATION_CREATE
-  APPLICATION_UPDATE
-  APPLICATION_SUBMIT
-  CLAIM_CREATE
-  CLAIM_UPDATE
-  CLAIM_SUBMIT
-  DOCUMENT_UPLOAD
-  DOCUMENT_DELETE
-  ADMIN_ACTION
-  SECURITY_EVENT
+model Message {
+  id                String    @id @default(cuid())
+  senderId          String
+  recipientId       String
+  subject           String?
+  body              String    @db.Text
+  isRead            Boolean   @default(false)
+  readAt            DateTime?
+  relatedEntityId   String?
+  relatedEntityType String?
+  
+  createdAt         DateTime  @default(now())
+  
+  sender            User      @relation("MessageSent", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient         User      @relation("MessageReceived", fields: [recipientId], references: [id], onDelete: Cascade)
+  
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([isRead])
 }
 
-model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  
-  action    AuditActionType
-  resource  String? // e.g., "FuneralApplication:abc123"
-  description String?
-  ipAddress String?
-  userAgent String?
-  
-  success   Boolean @default(true)
-  errorMessage String?
-  
-  createdAt DateTime @default(now())
-}
-
-// ============================================================================
-// FEEDBACK & CONTACT
-// ============================================================================
-
-enum ContactStatus {
-  NEW
+enum TicketStatus {
+  OPEN
   IN_PROGRESS
+  WAITING_FOR_CUSTOMER
   RESOLVED
   CLOSED
 }
 
-model ContactMessage {
-  id        String   @id @default(cuid())
+model SupportTicket {
+  id                String    @id @default(cuid())
+  ticketNumber      String    @unique
+  userId            String
+  subject           String
+  description       String    @db.Text
+  status            TicketStatus @default(OPEN)
+  priority          String    @default("NORMAL")
   
-  name      String
-  email     String
-  phone     String?
-  subject   String
-  message   String
+  assignedTo        String?
+  resolvedAt        DateTime?
+  resolutionNotes   String?   @db.Text
   
-  status    ContactStatus @default(NEW)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  closedAt          DateTime?
   
-  userId    String? // Null if not logged in
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  assignedTo String? // Admin user ID
-  adminResponse String?
-  respondedAt DateTime?
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([userId])
+  @@index([status])
 }
 
-model FAQ {
-  id        String   @id @default(cuid())
-  category  String // e.g., "Funeral Cover", "Applications", "Claims"
-  question  String
-  answer    String
-  order     Int @default(0)
-  isActive  Boolean @default(true)
+model AuditLog {
+  id                String    @id @default(cuid())
+  userId            String
+  action            String
+  entityType        String
+  entityId          String
+  changes           String?   @db.Text
+  reason            String?   @db.Text
+  metadata          String?   @db.Text
+  ipAddress         String?
+  userAgent         String?
   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt         DateTime  @default(now())
   
-  @@unique([category, question])
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([action])
+}
+
+model SystemSetting {
+  id                String    @id @default(cuid())
+  key               String    @unique
+  value             String    @db.Text
+  description       String?
+  category          String?
+  isPublic          Boolean   @default(false)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([category])
 }
